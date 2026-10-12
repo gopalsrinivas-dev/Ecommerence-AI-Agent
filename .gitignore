@@ -1,0 +1,22 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.audit-mypy-cache/
+.env
+.env.*
+!.env.example
+node_modules/
+.next/
+test-results/
+playwright-report/
+*.tsbuildinfo
+.docker-local/
+.local-postgres/
+.local-logs/
+
+# Existing empty local artifact, not application source.
+/backend/python
+
+auth-test-results/

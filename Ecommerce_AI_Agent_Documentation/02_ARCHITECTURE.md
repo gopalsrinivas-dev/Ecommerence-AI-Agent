@@ -1,0 +1,26 @@
+# Architecture
+
+## Deployment shape
+A modular monolith: one Next.js frontend, one FastAPI backend, one PostgreSQL database. An external LLM provider is accessed exclusively by the backend. Prefer a same-origin reverse proxy mapping /api to FastAPI to simplify session cookies.
+
+## Components
+- Next.js: login, orders, chat, confirmation and presentation.
+- FastAPI routes: request validation, authentication and response mapping.
+- Agent orchestrator: conversation context, tool schemas, bounded model/tool loop.
+- Tool registry: allowlisted get_order_status and cancel_order adapters.
+- Order service: ownership, state transitions, transactional cancellation.
+- Repositories: parameterized queries through SQLAlchemy.
+- PostgreSQL: orders, sessions, conversation records, pending actions and audit trail.
+- Provider adapter: timeouts and normalized provider errors.
+
+## Status request flow
+Browser submits chat message and conversation ID. API verifies session and conversation ownership. Agent submits minimal context and tool definitions to provider. A selected status tool calls order service with the server's authenticated customer context. Service queries PostgreSQL. Tool result is attached to the corresponding tool-call ID. Agent generates an answer from that result. API returns answer and request ID.
+
+## Cancellation flow
+Agent's cancel_order tool prepares a pending action; it does not update order status. API returns a structured confirmation card. Customer clicks Confirm. Confirmation endpoint locks pending action and order rows, verifies owner, expiry and current eligibility, updates order and action, inserts audit event, then commits. UI displays deterministic success from the endpoint. Optional AI wording must not control the outcome.
+
+## Boundaries
+The LLM cannot execute SQL, choose customer identity, grant permission, or authorize a mutation. The service layer remains authoritative. Next.js never gets database credentials or provider keys. Avoid a separate microservice for each layer at this scale.
+
+## Later extensions
+Add RAG only for documented policies with citations. Add MCP only for actual external tool integrations. Add a queue/outbox if cancellation needs reliable downstream events. Introduce distributed rate limiting when running multiple backend workers/replicas.

@@ -1,0 +1,20 @@
+# Isolated local Docker demo; run with --env-file .env.example -p parcel-docker-verify.
+services:
+  migrate:
+    environment: &verify-env
+      APP_ENV: development
+      LOG_FORMAT: json
+      PROVIDER_MODE: mock
+      OPENAI_API_KEY: ""
+      OPENAI_MODEL: ""
+      FRONTEND_ORIGIN: http://127.0.0.1:3001
+      SESSION_COOKIE_NAME: parcel_docker_session
+  backend:
+    environment: *verify-env
+    ports:
+      - "127.0.0.1:8002:8000"
+  frontend:
+    ports: !override
+      - "127.0.0.1:3001:3000"
+  seed:
+    environment: *verify-env

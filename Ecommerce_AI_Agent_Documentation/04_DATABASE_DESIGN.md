@@ -1,0 +1,29 @@
+# PostgreSQL Database Design
+
+## Tables
+users: id UUID PK, email normalized unique, password_hash, created_at timestamptz.
+sessions: id UUID PK, token_hash unique, user_id FK, expires_at, revoked_at, created_at. Store a hash, never the raw session token.
+orders: id UUID PK, order_id varchar(20) unique, customer_id FK users, product_name varchar(200), status, version integer default 1, created_at, updated_at, cancelled_at.
+conversations: id UUID PK, customer_id FK users, created_at, updated_at.
+messages: id UUID PK, conversation_id FK, role, content text, client_message_id nullable, created_at. Use a uniqueness constraint on (conversation_id, client_message_id) for customer submission deduplication.
+pending_actions: id UUID PK, customer_id FK, conversation_id FK, order_id FK orders.id, type, state, expires_at, result jsonb nullable, created_at, completed_at.
+audit_events: id UUID PK, actor_id FK, order_id FK nullable, action_id FK nullable, event_type, request_id, safe_metadata jsonb, created_at.
+
+## Constraints and indexes
+Allowed order states: PLACED, PROCESSING, SHIPPED, DELIVERED, CANCELLED. CHECK constraint validates values. Require cancelled_at exactly when status is CANCELLED. Allowed message roles: user, assistant, tool. Pending states: PENDING, COMPLETED, REJECTED, EXPIRED. Index orders(customer_id, created_at), conversations(customer_id, updated_at), messages(conversation_id, created_at), pending_actions(customer_id, state), audit_events(order_id, created_at). Add a unique index on audit_events(action_id, event_type) for cancellation-completed events.
+
+## State policy
+PLACED -> PROCESSING -> SHIPPED -> DELIVERED.
+PLACED or PROCESSING -> CANCELLED.
+CANCELLED and DELIVERED are terminal in the MVP. SHIPPED cancellation is rejected. This intentionally differs from the screenshot demonstration that cancelled a shipped order.
+
+## Cancellation transaction
+Begin transaction. SELECT pending action FOR UPDATE scoped to authenticated customer. If COMPLETED, return saved result. Reject expired, rejected or wrong-type action. SELECT referenced order FOR UPDATE scoped to customer. Recheck status. Update order to CANCELLED, set cancelled_at/updated_at and increment version. Mark action COMPLETED with saved result. Insert audit event. Commit. On database failure roll back the entire transaction.
+
+Serialize lock order consistently: pending action first, order second. Separate actions against one order serialize on the order row; the second returns already_cancelled and records its own completed result without repeating the cancellation audit event. Do not hold DB locks while calling an LLM.
+
+## Demo fixtures
+Create two demo users. Customer A: ORD1001 SHIPPED, ORD1003 CANCELLED, ORD1004 PROCESSING. Customer B: ORD1002 DELIVERED. Use fictional identities and local-only demo passwords. These fixtures extend the screenshot data to exercise ownership and successful cancellation.
+
+## Retention
+Define chat retention before launch; proposed starting value 30 days. Audit retention requires a business decision. Delete expired sessions/actions through a scheduled cleanup task. Migrations own schema changes; seed script must not run in production startup.

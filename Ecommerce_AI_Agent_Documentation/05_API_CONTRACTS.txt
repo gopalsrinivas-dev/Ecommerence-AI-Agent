@@ -1,0 +1,32 @@
+Proposed API Contracts
+
+All routes use /api/v1. JSON over HTTPS in production. Session cookie authenticates protected routes. Include X-Request-ID in responses. Use CSRF token/header for state-changing browser requests.
+
+Endpoints
+POST /auth/login: email/password -> user summary and session cookie; 200, 401, 422, 429.
+POST /auth/logout: revoke session -> 204.
+GET /auth/me: current user -> 200 or 401.
+GET /orders?limit=20&cursor=...: own orders with opaque next cursor; limit 1–100.
+GET /orders/{order_id}: own order summary -> 200 or generic 404.
+POST /conversations: create conversation -> 201 with conversation_id.
+GET /conversations/{id}/messages: own paginated history -> 200 or 404.
+POST /chat/messages: send message -> 200 with assistant message and optional action; 401, 404, 409, 422, 429, 503, 504.
+POST /actions/{action_id}/confirm: empty JSON body; confirm scoped pending action -> 200; 404, 409, 410.
+POST /actions/{action_id}/dismiss: invalidate pending action -> 200; does not change order.
+GET /health/live: process health -> 200.
+GET /health/ready: database readiness -> 200 or 503; no secrets or schema details.
+
+Chat request
+{"conversation_id":"<uuid>","client_message_id":"<uuid>","message":"Cancel my order ORD1004"}
+Chat response
+{"request_id":"<uuid>","message":{"id":"<uuid>","role":"assistant","content":"Please confirm cancellation of ORD1004."},"action":{"id":"<uuid>","type":"cancel_order","order_id":"ORD1004","state":"PENDING","expires_at":"<ISO-8601 timestamp>"}}
+Confirmation response
+{"request_id":"<uuid>","action_id":"<uuid>","state":"COMPLETED","order_id":"ORD1004","order_status":"CANCELLED","already_cancelled":false}
+Error response
+{"error":{"code":"ORDER_NOT_CANCELLABLE","message":"This order cannot be cancelled at its current stage.","retryable":false},"request_id":"<uuid>"}
+
+HTTP semantics
+422 invalid input; 401 no valid session; 403 failed CSRF/route-level permission; 404 resource absent or not owned; 409 state conflict or same conversation turn already executing; 410 pending action expired; 429 rate limit with Retry-After; 503 DB/provider temporarily unavailable; 504 deadline; 500 unexpected error with generic text.
+
+Retry and deduplication
+Deduplicate chat by client_message_id within the owned conversation and save execution state/result. A repeated completed submission returns its result; an executing submission returns 409. A failed submission may be explicitly retried using the same ID under a server-controlled state transition. Serialize turns within one conversation to avoid interleaved tool histories. Confirmation is idempotent by action_id. Never transparently replay a mutation merely because a network response was lost.

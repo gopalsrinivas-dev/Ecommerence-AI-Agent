@@ -1,0 +1,428 @@
+Project guide
+
+Verified 12 October 2026. Read FINAL_VERIFICATION_REPORT.md for executed evidence and limitations; original Ecommerce_AI_Agent_Documentation files are preserved proposals.
+
+Purpose, stack and boundaries
+
+Parcel is an authenticated customer portal for viewing owned orders, asking order status and preparing cancellation. Only a separate explicit confirmation endpoint changes an eligible order. Cancellation affects local PostgreSQL state only: no refunds, payments, inventory or carrier integration.
+
+Actual stack: Python 3.14 on this workstation; FastAPI, SQLAlchemy, psycopg, Alembic, Pydantic Settings, Argon2, OpenAI SDK; PostgreSQL 18 installation; Next.js 16.4.0, React 19, TypeScript, Tailwind 4; pytest, Ruff, mypy, Vitest/Testing Library, Playwright and ESLint. Exact resolved dependencies are in backend/requirements.lock and frontend/package-lock.json. No LangChain, LangGraph, vector store or MCP is used.
+
+Architecture: browser -> same-origin Next.js /api proxy -> FastAPI routes -> business services -> query repositories/SQLAlchemy -> PostgreSQL. Agent tools invoke the same order service with a server-injected actor. Provider calls happen outside database locks. Services own transactions and also construct/write ORM records; repositories encapsulate reusable query helpers. Router and orchestration are consolidated rather than split into every file in the proposed tree.
+
+Maintained-source inventory
+
+The inventory below includes maintained source/configuration/documentation, including this guide. Empty Python package initializers are package markers, not placeholder features. backend/python is an existing empty non-module artifact retained to preserve user work. Actual secrets, dependencies, caches, build output, local PostgreSQL data/logs and generated test artifacts are omitted.
+
+.env.example
+.github/
+  workflows/
+    ci.yml
+.gitignore
+Ecommerce_AI_Agent_Documentation/
+  00_README.md
+  00_README.txt
+  01_REQUIREMENTS.md
+  01_REQUIREMENTS.txt
+  02_ARCHITECTURE.md
+  02_ARCHITECTURE.txt
+  03_FOLDER_STRUCTURE.md
+  03_FOLDER_STRUCTURE.txt
+  04_DATABASE_DESIGN.md
+  04_DATABASE_DESIGN.txt
+  05_API_CONTRACTS.md
+  05_API_CONTRACTS.txt
+  06_AGENT_WORKFLOW.md
+  06_AGENT_WORKFLOW.txt
+  07_FRONTEND_DESIGN.md
+  07_FRONTEND_DESIGN.txt
+  08_SECURITY_ERROR_LOGGING.md
+  08_SECURITY_ERROR_LOGGING.txt
+  09_SETUP_DEPLOYMENT.md
+  09_SETUP_DEPLOYMENT.txt
+  10_IMPLEMENTATION_TEST_PLAN.md
+  10_IMPLEMENTATION_TEST_PLAN.txt
+  11_SOURCE_REVIEW.md
+  11_SOURCE_REVIEW.txt
+  ALL_DOCUMENTS.md
+  ALL_DOCUMENTS.txt
+README.md
+backend/
+  .dockerignore
+  .env.example
+  Dockerfile
+  alembic.ini
+  app/
+    __init__.py
+    agents/
+      __init__.py
+      orchestrator.py
+    api/
+      __init__.py
+      dependencies.py
+      router.py
+    core/
+      __init__.py
+      config.py
+      exceptions.py
+      logging.py
+      postgres.py
+      security.py
+    db/
+      __init__.py
+      session.py
+    integrations/
+      __init__.py
+      llm_client.py
+    main.py
+    models/
+      __init__.py
+      action.py
+      audit_event.py
+      base.py
+      conversation.py
+      message.py
+      order.py
+      rate_bucket.py
+      session.py
+      turn.py
+      user.py
+    repositories/
+      __init__.py
+      actions.py
+      base.py
+      conversations.py
+      health.py
+      orders.py
+      rate_limits.py
+      sessions.py
+      users.py
+    schemas/
+      __init__.py
+      action.py
+      auth.py
+      base.py
+      chat.py
+      error.py
+      order.py
+    services/
+      __init__.py
+      auth_service.py
+      chat_service.py
+      order_service.py
+      query_service.py
+  migrations/
+    env.py
+    versions/
+      0001_initial.py
+  pyproject.toml
+  python
+  requirements.lock
+  scripts/
+    __init__.py
+    freeze_migration.py
+    maintenance.py
+    seed_demo.py
+  tests/
+    conftest.py
+    test_agent.py
+    test_errors.py
+    test_integration.py
+    test_logging.py
+    test_recovery.py
+    test_session.py
+compose.verify.yaml
+compose.yaml
+docs/
+  FINAL_VERIFICATION_REPORT.md
+  FINAL_VERIFICATION_REPORT.txt
+  IMPLEMENTATION_STATUS.md
+  PROJECT_GUIDE.md
+  PROJECT_GUIDE.txt
+frontend/
+  .dockerignore
+  .env.example
+  AGENTS.md
+  Dockerfile
+  e2e/
+    auth.spec.ts
+    workflow.spec.ts
+  eslint.config.mjs
+  next-env.d.ts
+  next.config.ts
+  package-lock.json
+  package.json
+  playwright.config.ts
+  postcss.config.mjs
+  scripts/
+    start.mjs
+  src/
+    app/
+      (authenticated)/
+        chat/
+          page.tsx
+        layout.tsx
+        orders/
+          [orderId]/
+            page.tsx
+          page.tsx
+      (public)/
+        layout.tsx
+        login/
+          page.tsx
+      error.tsx
+      globals.css
+      layout.tsx
+      not-found.tsx
+      page.tsx
+    components/
+      Feedback.tsx
+      SessionUnavailable.tsx
+      Shell.tsx
+    features/
+      CancellationCard.tsx
+      Chat.tsx
+      Orders.tsx
+    lib/
+      api-client.ts
+      session.ts
+  tests/
+    cancellation.test.tsx
+    chat.test.tsx
+    errors.test.tsx
+    session.test.tsx
+    setup.ts
+  tsconfig.json
+  vitest.config.ts
+scripts/
+  start-backend.cmd
+
+Responsibilities
+
+Models: base.py supplies Base/Record/UTC time; nine domain modules map users, sessions, orders, conversations, messages, pending_actions, audit_events, chat_turns and rate_buckets. Models/__init__.py registers/reexports the same classes for Alembic metadata. Schemas: StrictInput forbids extra arguments; auth/order/chat/action/error modules describe public contracts. Repositories: ownership-scoped lookups, pagination, rate upserts and health query, without independent commits.
+
+Services: auth_service owns login/session/revocation and rate transactions; order_service owns status, action preparation, confirmation, dismissal and audits; chat_service owns conversation/turn leases, persistence and retries; query_service maps order pagination/readiness. API dependencies enforce session, Origin and CSRF; router defines endpoints. main.py supplies centralized handlers, request IDs and normalized logging. integrations/llm_client.py implements explicit mock/OpenAI modes. agents/orchestrator.py owns allowlisted strict tools, call/time/history budgets and deterministic factual output.
+
+Frontend public layout verifies session before login rendering; authenticated layout verifies before rendering Shell. Shell owns navigation/logout/demo banner. Orders renders list/detail with pagination and refresh listeners. Chat restores conversation/history/retry identity per tab. CancellationCard confirms/dismisses/reconciles a server-issued action. api-client forwards CSRF, parses safe errors and redirects on 401; session.ts performs uncached server verification and safe diagnostics.
+
+Customer workflows
+
+1. Open http://localhost:3000. Anonymous protected pages redirect to /login, which displays only the sign-in panel. Sign in; the server creates opaque session and CSRF cookies. Authenticated /login redirects to /orders. Refresh verifies the same session; no refresh-token endpoint is implemented. Logout revokes the session and clears cookies/private tab storage.
+2. View My orders, open an order or navigate to Support assistant. Ask Where is ORD1001?. The allowlisted status tool checks ownership and returns database status/product. Missing IDs prompt clarification; unknown/unowned IDs share unavailable responses.
+3. Ask Please cancel ORD1004. PLACED/PROCESSING creates an expiring PENDING action without changing the order. Keep order dismisses it. Confirm cancellation locks the owned action then order, rechecks eligibility and atomically commits CANCELLED, saved action result and audit. Expiry requires a new request. Lost responses can use Check cancellation result; repeated confirm returns the saved outcome without provider calls.
+
+API reference
+
+Prefix /api/v1. Errors: { "error": { "code": "...", "message": "...", "retryable": false }, "request_id": "..." }; X-Request-ID matches. Protected mutations require Origin=http://localhost:3000 and X-CSRF-Token from csrf_token cookie. Use browser same-origin proxy; no wildcard credentialed CORS.
+
+Method/path ; Input ; Success
+POST /auth/login ; email, password ; 200 user {id,email}, provider_mode, cookies
+GET /auth/me ; session cookie ; 200 identity
+POST /auth/logout ; session + CSRF ; 204, revoked and cookies cleared
+GET /orders ; limit 1..100 default 20; UUID cursor ; 200 items, next_cursor
+GET /orders/{order_id} ; owned external ID ; 200 id, order_id, product_name, status, updated_at, version
+POST /conversations ; empty JSON object ; 201 conversation_id
+GET /conversations/{identity}/messages ; UUID; limit 1..100 default 50, UUID cursor ; 200 items, next_cursor; messages include action where applicable
+POST /chat/messages ; conversation_id UUID, client_message_id UUID, message 1..2000 characters ; 200 message, optional action, request_id
+POST /actions/{identity}/confirm ; server action UUID, empty JSON object ; 200 action_id, state, order_id, order_status, already_cancelled, request_id
+POST /actions/{identity}/dismiss ; server action UUID, empty JSON object ; 200 action view; no order change
+GET /health/live ; none ; 200 process alive
+GET /health/ready ; none ; 200 database migration revision 0001 available, otherwise 503
+
+422 invalid input; 401 invalid/expired session; 403 Origin/CSRF; 404 absent/unowned; 409 state/turn/content conflict; 410 expired action; 429 rate limit with Retry-After:60; 503 database/provider unavailable; 504 provider/turn deadline; 500 unexpected. Swagger at http://127.0.0.1:8001/docs, OpenAPI /openapi.json.
+
+Only login and chat submission are rate limited: defaults 10/minute per connection-source host and authenticated UUID respectively. SHA-256 keyed counters use PostgreSQL atomic fixed-minute windows across workers. Proxy login users share one source bucket. Other endpoints have no limiter. Retrying chat consumes rate allowance but preserves the same client_message_id/content for deduplication. Confirmation idempotency uses action ID independently of rate limiting.
+
+Database and rules
+
+users: unique normalized email and Argon2 password hash. sessions: user FK, unique token hash, CSRF hash, expiry and revocation. orders: unique external order ID, owner FK, product, checked status, version and cancellation timestamps. conversations: owner and expiring execution lease. messages: conversation FK, checked role, text, optional action reference and unique conversation/client ID. pending_actions: owner/conversation/order, optional turn ID, cancel_order type, checked state, expiry and JSON result; unique turn/order. audit_events: actor/order/action, event type, request ID and safe metadata; unique action/event. chat_turns: unique conversation/client ID, content hash, lease, checked execution state and saved result. rate_buckets: composite key/window and atomic count. alembic_version records schema revision.
+
+Only PLACED/PROCESSING can become CANCELLED. cancelled_at is present exactly for CANCELLED. SHIPPED/DELIVERED are ineligible. Action and order locks serialize concurrent confirms. Another action on an already cancelled order completes with already_cancelled and no second transition/audit. Provider wording cannot authorize confirmation. Chat leases serialize turns; expired leases can be reclaimed and fenced tools cannot run for an old lease. Tests use their own database schema resets; never point TEST_DATABASE_URL at valuable data.
+
+Environment
+
+Actual native topology: PostgreSQL 127.0.0.1:55432/ecommerce_local; backend 127.0.0.1:8001; frontend localhost:3000; root .venv. Templates: backend/.env.example for native backend, frontend/.env.example for proxy, root .env.example for Compose. Real files are ignored. Do not overwrite existing configuration.
+
+Variable ; Meaning/default
+DATABASE_URL ; backend-only postgresql+psycopg URL; configure privately, never print
+POSTGRES_BIN ; Windows installed bin containing libpq.dll; actual D:\Workspace\softwares\PostgreSQL\18\bin
+APP_ENV ; development/test/production; production requires HTTPS and real provider
+LOG_FORMAT ; auto/console/json; auto console in development, JSON in production
+PROVIDER_MODE ; mock (explicit demo) or openai; no silent fallback
+OPENAI_API_KEY / OPENAI_MODEL ; backend-only live credentials/available tool-capable model; currently unconfigured
+FRONTEND_ORIGIN ; exact http://localhost:3000 locally; HTTPS in production
+SESSION_COOKIE_NAME / SESSION_TTL_SECONDS ; ecommerce_session / 28800 seconds
+ACTION_TTL_SECONDS ; 300 seconds
+CHAT_TIMEOUT_SECONDS / PROVIDER_TIMEOUT_SECONDS ; 30 / 10 seconds
+MAX_AGENT_MODEL_CALLS / MAX_AGENT_TOOL_CALLS ; 4 / 4 per turn
+AUTH_RATE_LIMIT / CHAT_RATE_LIMIT ; positive requests per fixed minute, defaults 10 / 10
+BACKEND_URL ; server-only frontend proxy/session target, native http://127.0.0.1:8001; captured by rewrites at build
+TEST_DATABASE_URL ; isolated disposable PostgreSQL test URL; database name must contain test
+E2E_BASE_URL ; browser test target, default http://localhost:3000
+FRONTEND_HOST ; standalone native bind address, default 127.0.0.1
+POSTGRES_PASSWORD ; Compose-only DB credential supplied privately
+
+CSRF_SECRET and LOG_LEVEL from the original proposal are not implemented settings; CSRF uses random session-bound hashed tokens and application logging is INFO/ERROR.
+
+Exact Windows CMD setup and startup
+
+The following installed path and existing cluster were inspected and used. Run in Windows CMD. First check PostgreSQL and service readiness; reuse healthy services. Do not run initdb against this existing data directory.
+
+cd /d D:\Workspace\professional\AgenticAI\Ecommerence-AI-Agent
+"D:\Workspace\softwares\PostgreSQL\18\bin\pg_isready.exe" -h 127.0.0.1 -p 55432
+
+If that cluster is stopped, start it and wait for readiness:
+
+"D:\Workspace\softwares\PostgreSQL\18\bin\pg_ctl.exe" -D "D:\Workspace\professional\AgenticAI\Ecommerence-AI-Agent\.local-postgres" -l "D:\Workspace\professional\AgenticAI\Ecommerence-AI-Agent\.local-logs\postgres-start.log" -o "-p 55432 -h 127.0.0.1" start
+"D:\Workspace\softwares\PostgreSQL\18\bin\pg_isready.exe" -h 127.0.0.1 -p 55432
+
+Existing .local-logs directory is present. Keep logs outside the database data directory on future starts to avoid recovery sharing conflicts. Recovery can take longer than the first readiness probe. Inspect logs and identified cluster processes; never delete postmaster.pid or kill unknown processes merely because startup takes time.
+
+First installation only, when .venv/dependencies are missing:
+
+py -3.14 -m venv .venv
+.venv\Scripts\python.exe -m pip install -r backend\requirements.lock
+if not exist backend\.env copy backend\.env.example backend\.env
+if not exist frontend\.env.local copy frontend\.env.example frontend\.env.local
+cd frontend
+npm.cmd ci
+cd ..
+
+Configure backend/.env privately for the actual DB and installed POSTGRES_BIN before migration. The shipped native template uses a generic database default, not this workspace's 55432 configuration. No database credentials are provided here. Existing local setup needs no reinstall. From root, after PostgreSQL is ready:
+
+cd backend
+..\.venv\Scripts\python.exe -m alembic upgrade head
+cd ..
+scripts\start-backend.cmd
+
+Launcher uses root .venv and backend working directory, binds loopback 8001 and disables raw access logs. A separate CMD terminal:
+
+cd /d D:\Workspace\professional\AgenticAI\Ecommerence-AI-Agent\frontend
+set "BACKEND_URL=http://127.0.0.1:8001"
+npm.cmd run dev
+
+For the verified production frontend alternative, run npm.cmd run build then npm.cmd start in that terminal. Do not run dev and start on the same port. Check in a third terminal:
+
+curl.exe -f http://127.0.0.1:8001/api/v1/health/live
+curl.exe -f http://127.0.0.1:8001/api/v1/health/ready
+curl.exe -f http://localhost:3000/api/v1/health/ready
+
+Open http://localhost:3000, matching FRONTEND_ORIGIN. Stop only the backend/frontend terminals you launched using Ctrl+C. After applications stop, gracefully stop this identified project cluster if desired:
+
+"D:\Workspace\softwares\PostgreSQL\18\bin\pg_ctl.exe" -D "D:\Workspace\professional\AgenticAI\Ecommerence-AI-Agent\.local-postgres" -m fast stop
+
+This stops the entire identified cluster, including any test connections. It preserves data. Do not stop a different PostgreSQL service.
+
+Migrations, seed, providers and demo credentials
+
+python -m alembic upgrade head from backend applies the self-contained 0001 migration. Downgrade is destructive and was tested only in the newly created audit DB. Never downgrade/reset existing ecommerce_local for verification. For a new local demo DB only, explicitly run ..\.venv\Scripts\python.exe -m scripts.seed_demo from backend. It preserves existing orders and is forbidden in production; it does not restore cancelled fixtures. Run maintenance periodically with ..\.venv\Scripts\python.exe -m scripts.maintenance; schedule it separately. Chat/audit deletion is excluded pending retention policy.
+
+Public fictional application demo credentials (these are NOT database credentials): alex@example.test / DemoShop!2026 and sam@example.test / DemoShop!2026. Fresh Alex fixtures: ORD1001 SHIPPED, ORD1003 CANCELLED, ORD1004 PROCESSING; Sam ORD1002 DELIVERED. Existing preserved state may differ. Real DB credentials belong only in ignored environment files.
+
+Mock mode is explicit and shows a demo banner; real ownership/transaction rules still run. To use OpenAI, privately set PROVIDER_MODE=openai, OPENAI_API_KEY and OPENAI_MODEL, then restart. Model availability/live access has not been checked and no paid requests were authorized/executed. Live failure remains an error, not a fallback demo response.
+
+Docker alternative: with a running Linux-container daemon, docker --config .docker-local compose up --build, then in another terminal docker --config .docker-local compose --profile tools run --rm seed. Configure root .env without overwriting it. Compose orders db readiness -> migration completion -> backend readiness -> frontend, persists postgres-data, publishes only frontend loopback, and uses internal port 8000. docker compose down preserves the volume; do not use down -v. The default configuration was inspected; isolated Docker runtime now passes using compose.verify.yaml as described below.
+
+Test commands
+
+Create your own empty disposable test DB first. The audit used new names ecommerce_final_test_20261012 and ecommerce_final_browser_test_20261012; retained audit databases contain test artifacts. Tests drop/recreate application tables. Use no valuable database, even if its name contains test.
+
+cd /d D:\Workspace\professional\AgenticAI\Ecommerence-AI-Agent\backend
+set "PSYCOPG_IMPL=python"
+set "PATH=D:\Workspace\softwares\PostgreSQL\18\bin;%PATH%"
+set "TEST_DATABASE_URL=postgresql+psycopg://app@127.0.0.1:55432/ecommerce_final_test_20261012"
+set "DATABASE_URL=%TEST_DATABASE_URL%"
+..\.venv\Scripts\ruff.exe check --no-cache .
+..\.venv\Scripts\ruff.exe format --check --no-cache .
+..\.venv\Scripts\python.exe -m mypy --cache-dir=../.audit-mypy-cache app
+..\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+
+That test URL is only for the existing isolated audit cluster configuration; use privately configured credentials elsewhere. In a separate frontend terminal:
+
+cd /d D:\Workspace\professional\AgenticAI\Ecommerence-AI-Agent\frontend
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd test
+npm.cmd run build
+npm.cmd run e2e -- --trace off
+
+E2E requires a backend pointing at a separate freshly migrated/seeded disposable demo DB, never ecommerce_local. workflow.spec.ts cancels ORD1004 and needs a new fixture database for rerun. auth.spec.ts alone avoids order mutation. Clear DATABASE_URL/TEST_DATABASE_URL in test terminals before any normal startup, or open a new terminal. CI provisions separate integration/E2E DBs and locked installs but has not run remotely in this audit.
+
+Logging and troubleshooting
+
+LOG_FORMAT=auto|console|json; restart after changes. Console sample: level="INFO" event="request_completed" method="POST" path="/api/v1/actions/{identity}/confirm" action="confirm" status_code=200 duration_ms=12. JSON sample: {"event":"request_completed","request_id":"example-server-uuid","method":"GET","route_template":"/api/v1/orders","action":"orders","status_code":200,"duration_ms":8}. Actual events also include UTC timestamp and safe actor/conversation/action context when available. Payloads, secrets, arbitrary URLs/parameters and exception messages are omitted. Preparation logs after commit, confirmation logs committed/replayed outcomes; transactional audit is authoritative. No durable outbox or token-cost telemetry is provided.
+
+Database unavailable: liveness may return 200 while readiness returns 503. Check the exact configured cluster first; do not reseed/change credentials to fix a stopped DB. Occupied port: netstat -ano | findstr :8001 or :3000 identifies PID; inspect owner before reusing/stopping. Do not kill unknown processes. Proxy mismatch: set BACKEND_URL consistently, restart dev or rebuild production rewrites. Origin/session failures: use localhost rather than 127.0.0.1 in the browser; verify FRONTEND_ORIGIN and backend readiness. Only explicit 401 means signed out; other verification failures withhold private content and offer Retry.
+
+Windows DLL policy: configure actual POSTGRES_BIN. Initialization registers DLL search directory and process PATH and defaults PSYCOPG_IMPL=python before driver import. Keep installed libpq dependencies together. No security policy changes or copied DLLs are needed. Current installed libpq loaded successfully; a future policy denial requires administrator-approved binaries. Do not repeatedly reinstall a blocked binary wheel. A mypy compiled-module denial is separate; use an approved pure-Python installation if needed. Sandbox cache-write denial can be avoided for Ruff using --no-cache; do not disable Windows security.
+
+Known limitations
+
+Local mock demo passed; production is not signed off. Live provider, hosted CI, backup/restore, ingress/TLS, load/security/contrast/keyboard audit and full multi-process stress remain outstanding. Login proxy source bucket is shared; most endpoints have no rate limit. UUID history pages are sorted by timestamp in the client, not chronological server cursors. Manual retry UI is not uniformly governed by the retryable flag. No customer provisioning/password recovery, automatic session refresh/rotation, conversation list, refunds, stock/carrier updates or retention policy. See the report for exact PASS/PARTIAL/BLOCKED/NOT VERIFIED distinctions.
+
+
+Docker follow-up - 12 October 2026
+
+This follow-up supersedes the earlier Docker-runtime BLOCKED result and fresh-container-install uncertainty. Docker Engine 29.5.3 and Compose v5.1.4 were available on Linux x86_64. The complete isolated stack was built and verified, then left running.
+
+Isolation and confirmed fix
+
+Project: parcel-docker-verify. Volume: parcel-docker-verify_postgres-data, mounted at /var/lib/postgresql. Database: ecommerce, internal 5432 only (inspect reports no host binding). Frontend: http://127.0.0.1:3001. Backend: loopback 8002 -> container 8000. Provider: explicitly mock/demo, APP_ENV=development, JSON logs. No live provider call occurred.
+
+Confirmed defect fixed in compose.yaml: the frontend had a build-time BACKEND_URL but no runtime value for server-side session verification. Added frontend environment BACKEND_URL=http://backend:8000; both rewrites and server authentication now use the container backend. Added compose.verify.yaml to replace the frontend port, publish the diagnostic backend only on loopback, set exact FRONTEND_ORIGIN=http://127.0.0.1:3001, force mock mode with empty provider credentials and use parcel_docker_session. The different hostname isolates Docker CSRF cookies from native localhost:3000. Native environment files and application ports remain unchanged. Compose !override requires v2.24.4+.
+
+Browser auth tests now accept E2E_BASE_URL and E2E_SESSION_COOKIE, retaining native defaults. No application authentication rule was weakened. Both application containers run as UID 1000. Backend image contains no actual .env file; Docker ignore rules exclude actual frontend/backend environment files.
+
+Executed commands and results
+
+From project root, the following commands actually executed successfully:
+
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml config --quiet
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml up --build -d
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml --profile tools run --rm seed
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml ps -a
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml exec -T backend python -m alembic check
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml exec -T backend python -m pip check
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml restart -t 30 db backend frontend
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml up -d --wait --wait-timeout 120
+
+Clean Docker builds installed backend/requirements.lock and ran frontend npm ci (261 packages; installer reported zero vulnerabilities), then completed Next.js production build. No dependency lockfile was changed. DB health precedes the migration job; migrate exited 0, backend became healthy, then frontend started and became healthy. Alembic check found no new upgrade operations; pip check found no broken requirements. The intended seed service seeded only this new Docker database and was not run against native databases.
+
+Browser verification from frontend:
+
+set "E2E_BASE_URL=http://127.0.0.1:3001"
+set "E2E_SESSION_COOKIE=parcel_docker_session"
+npm.cmd run e2e -- --trace off --output auth-test-results/docker
+npm.cmd run e2e -- e2e/auth.spec.ts --trace off --output auth-test-results/docker-after-restart
+
+PASS: 2 browser workflows (18.2 seconds), followed by 1 auth workflow after restart (4.4 seconds). Tests covered anonymous protection, invalid credentials/origin, valid login, cookie flags, refresh, authenticated-login redirect, missing CSRF rejection, chat navigation, logout/removal, invalid session, owned orders, shipped status, cancellation preparation, dismissal, preparation again, confirmation and refreshed CANCELLED state. Mobile overflow assertion also passed. The test title mentions expiry, but actual expired-session timestamps are covered by previous backend tests; this Docker browser test checks invalid/revoked sessions rather than forcing timestamp expiry.
+
+Additional temporary verifier command: root .venv\Scripts\python.exe .local-logs/verify-docker-api.py (executed before and after restart). PASS: explicit mock mode, proxied login/logout, Alex/Sam order ownership and separate lists, history/action cross-owner 404, blank chat 422, missing-ID clarification, shipped cancellation rejection, missing-CSRF 403, saved-result confirmation replay, safe error envelope and matching request IDs. The verifier reads only Docker-origin resources and a conversation ID obtained with Docker db psql. Temporary evidence/script files remain ignored in .local-logs; they are not required application source.
+
+Docker DB query after browser cancellation and repeated confirmations returned CANCELLED | version 2 | cancellation audit count 1 | completed action count 1. Repeated confirmation returned identical saved business results (excluding the per-request request ID), without another mutation/audit. No refunds or external shipment changes were tested or claimed. ORD1004 remains CANCELLED in Docker; the seed does not reset it.
+
+PASS: direct http://127.0.0.1:8002/api/v1/health/ready and proxied http://127.0.0.1:3001/api/v1/health/ready return 200. Final db/backend/frontend are healthy; migrate exited 0 as intended.
+
+Persistence, logs and native preservation
+
+Normal restart used the command above, with no volume deletion. Before/after Docker order checksum and counts for messages, audits and actions matched. API smoke checks and browser auth passed afterward. The named volume is retained and services are running.
+
+Native PostgreSQL PID 11628 remained on 55432. Native frontend listeners PIDs 18580/20856 remained on 3000. Native backend 8001 had no listener at the initial check and still had none at the final check; no attempt was made to stop or repair it as part of Docker work. Existing ecommerce_local order count/checksum matched before/after. No native tables were seeded, reset or mutated. No existing containers/volumes were removed.
+
+Captured logs: .local-logs/docker-app-before-restart.log and docker-app-final.log. Before-restart JSON analysis found 2 cancellation_prepared, 1 cancellation_dismissed, 1 cancellation_committed and 2 cancellation_replayed events, plus provider/request completions. Numeric status/duration and request/method/route/action fields passed checks. Sensitive payload field names were absent. Demo application password, demo DB credential string and database URL prefix were absent from captured application logs. This is observed evidence, not an exhaustive proof for every possible input. Docker stdout/stderr are also accessible using compose logs; no raw Uvicorn URL access log is enabled.
+
+Demo and exact data-preserving operation
+
+Application credentials only: alex@example.test / DemoShop!2026; sam@example.test / DemoShop!2026. These are public fictional demo logins, not database credentials. Use http://127.0.0.1:3001 exactly; localhost:3001 is a different Origin and can collide with native localhost cookies.
+
+From project root in CMD:
+
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml logs -f --tail 100 backend frontend
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml stop
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml up -d --wait --wait-timeout 120
+
+Ctrl+C stops log following only. stop and up preserve the volume. Rebuild with the earlier up --build -d command after code changes. Do not use down -v, delete volumes or reset the native database. Use the same project/files/env arguments on every command.
+
+Remaining checks
+
+Docker local mock-demo readiness: PASS. Docker/runtime and clean container dependency installs are now verified. Live OpenAI, production HTTPS/Secure-cookie behavior, external ingress, Docker Desktop/host reboot persistence, image vulnerability scanning beyond npm install's audit, backup/restore, load/multi-replica tests and hosted GitHub CI remain NOT VERIFIED. No new full backend unit suite was run inside Docker; previous backend results remain separate evidence. Production readiness is still PARTIAL. Native backend availability was not changed by this task.

@@ -1,0 +1,36 @@
+Setup and Deployment Plan
+
+This is a setup specification for the future repository. Commands below become applicable once the planned code and configuration exist.
+
+Dependencies to select and lock
+Backend: fastapi, uvicorn, sqlalchemy, psycopg PostgreSQL driver, alembic, pydantic-settings, openai, a maintained password-hashing package, pytest and httpx. Optional langchain/langchain-openai only if the implementation uses them. Use structured standard logging or an explicit logging package.
+Frontend: next, react, react-dom, typescript; choose CSS approach and a browser test tool. Keep a package-manager lockfile.
+Do not copy screenshot MySQL/Streamlit dependencies into the selected PostgreSQL/Next.js stack. Exact current package versions and provider model access are not verified by this documentation delivery.
+
+Backend environment template
+APP_ENV=development
+DATABASE_URL=postgresql+psycopg://app_user:replace_me@localhost:5432/ecommerce
+OPENAI_API_KEY=replace_me
+OPENAI_MODEL=choose_available_tool_capable_model
+SESSION_COOKIE_NAME=ecommerce_session
+SESSION_TTL_SECONDS=28800
+CSRF_SECRET=replace_with_random_secret
+FRONTEND_ORIGIN=http://localhost:3000
+LOG_LEVEL=INFO
+CHAT_TIMEOUT_SECONDS=30
+MAX_AGENT_MODEL_CALLS=4
+MAX_AGENT_TOOL_CALLS=4
+ACTION_TTL_SECONDS=300
+Placeholder values are not production credentials. DATABASE_URL dialect must match the chosen sync/async SQLAlchemy design. This plan assumes psycopg and service-owned transactions; verify concurrency behavior during implementation.
+
+Local sequence
+Install a supported Python and Node.js version compatible with pinned dependencies. Create Python virtual environment. Install locked backend dependencies. Start PostgreSQL. Run Alembic migrations. Run local-only seed script. Start FastAPI on 8000. Install frontend dependencies with npm ci after lockfile exists. Start frontend on 3000. Configure local proxy/API base consistently. Verify login, status and confirmed cancellation.
+
+Containers
+compose.yaml should define database, backend and frontend, DB health check, application health checks and named DB volume. Inject secrets at runtime; do not bake them into images. Run application containers as non-root. Execute migrations once as a release job rather than independently on each replica.
+
+CI and release
+CI: dependency installation from locks, backend lint/type checks as configured, frontend lint/type checks, unit and PostgreSQL integration tests, frontend build and essential end-to-end tests. Deployment: build immutable images, inject environment, run migration job, start services, verify readiness and smoke workflow. Avoid live destructive migration without a verified backup/rollback plan.
+
+Production needs
+TLS, restricted DB network access, backups and a restore drill, centralized logs, monitoring, worker-safe rate limiting, controlled migrations and documented retention. Start with one backend replica for MVP; before scaling replace process-local turn locks/rate limits with shared state. Do not equate a local demo with production readiness.

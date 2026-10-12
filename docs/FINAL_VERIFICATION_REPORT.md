@@ -1,0 +1,181 @@
+# Final verification report
+
+Audit date: 12 October 2026 (Asia/Calcutta).
+
+Current Docker result: PASS after the follow-up at the end of this report; that section supersedes earlier unavailable-daemon and container-install statements.
+
+## Scope and preservation
+
+Reviewed the individual original specifications 00 through 11, README, implementation status, maintained backend/frontend source, schemas/models/repositories/services, agent/provider adapters, migrations, scripts, tests, Docker/Compose and CI. Dependencies, caches, generated builds and database files were excluded from source review. Original specifications remain unchanged and describe a proposal, not the final tree. No previous verification claim was accepted as current test evidence.
+
+Initial Git state: application and documentation were untracked; `git ls-files` returned no files. No tracked cache removal was necessary. No commit, push or deployment was performed. Existing environment files were not printed or overwritten. Existing databases were not reset or seeded. Created `ecommerce_final_test_20261012`, `ecommerce_final_browser_test_20261012` and `ecommerce_final_browser_test_20261012_r2` exclusively for destructive test fixtures and browser cancellation. Those databases are retained for inspection. Final native launcher and proxied readiness were checked again against ecommerce_local. The original cluster needed startup/recovery; PostgreSQL completed recovery successfully. Final backend configuration again targets `ecommerce_local`.
+
+## Requirement comparison
+
+| Requirement | Status | Implementation and evidence |
+|---|---|---|
+| FR-01 session-derived actor | PASS | api/dependencies.py, services/auth_service.py; session and injection tests |
+| FR-02 order ID plus customer ownership | PASS | repositories/orders.py and base.py; cross-owner tests return generic 404 |
+| FR-03 missing ID clarification | PASS | agents/orchestrator.py; test_agent.py missing-ID test |
+| FR-04 factual status/product | PASS | order_service.status and deterministic factual(); browser status workflow |
+| FR-05 prepare without mutation | PASS | order_service.prepare; integration test observes PROCESSING until confirm |
+| FR-06 explicit transactional confirmation | PASS | order_service.confirm; action then order locks; browser confirm/dismiss |
+| FR-07 idempotent confirmation | PASS | stored action.result; same/different-action concurrency tests, single audit/version increment |
+| FR-08 unsupported scope | PASS | deterministic scope explanation; unknown tools rejected; no refunds claimed |
+| FR-09 owned history/actions | PASS | conversation lookup, action ownership; integration ownership tests |
+| Login/logout, expiry, refresh | PASS | Argon2 and opaque hashed sessions; integration expiry/revocation; browser reload preserves session. Refresh means page reload, not a refresh-token endpoint |
+| Public login and protected navigation | PASS | public/authenticated route layouts and backend session verification before Shell; Playwright anonymous guards, authenticated login redirect, invalid cookie and logout |
+| No loading navigation flash | PASS | Shell renders only after awaited server verification; session component tests and anonymous browser assertions. No frame-by-frame visual timing measurement |
+| Orders/details/pagination | PASS | owned list/details browser checks; UUID keyset cursor implementation inspected. Added owned order/history limit=1 traversal checks, verifying complete results without foreign-owner leakage; high-volume scale remains unmeasured |
+| Chat input/history/retries/dedup | PASS/PARTIAL | UUID IDs, content hash, 2000-character schema, durable turns and sessionStorage retry; tests for retry identity and duplicate sends. Whitespace-only messages are rejected; owned history pagination is tested at page size one; high-volume scale remains unmeasured |
+| Concurrent and abandoned turns | PASS | PostgreSQL conversation lease, tool/completion fencing, unique turn/action keys; serialization/recovery tests. Threads with independent sessions tested; separate worker-process stress not executed |
+| Cancellation eligibility/expiry/dismissal | PASS | only PLACED and PROCESSING transition; tests cover SHIPPED/DELIVERED, expiry, dismissal and eligibility recheck |
+| Audit/rollback/provider failure | PASS | same transaction writes order/action/audit; audit/commit failure tests; committed result survives later provider failure and replay avoids provider |
+| Layered architecture | PARTIAL | routes and agent tools call services; repositories own query helpers; services also use ORM add/get/flush for transaction orchestration. No separate registry/tool files are required for this small implementation |
+| Meaningful domain modules/imports | PASS | nine entities in domain files; domain schemas and repository modules; minimal initializers register same mapped classes; Alembic check reports no drift |
+| Original proposed tree | PARTIAL | consolidated router, tools in orchestrator and actions in order service; no unused proposed prompts/registry/infra files. Actual complete inventory is in PROJECT_GUIDE |
+| Health/startup/proxy/Windows driver | PASS | PostgreSQL 55432, backend 8001, frontend 3000; native pure-Python psycopg with installed libpq; ready direct and proxied return 200 |
+| Docker runtime | PASS | isolated Compose build, migration, seed, browser/API and restart persistence verified; see Docker follow-up |
+| Live OpenAI | NOT VERIFIED | existing mode is mock and key/model are unconfigured; no paid call made |
+| CI execution/clean reinstall | PARTIAL | clean container locked installs passed; hosted CI unverified at preparation time |
+
+## Executed checks
+
+Commands below run from backend unless noted. Windows environment uses `PSYCOPG_IMPL=python` and PostgreSQL bin on process PATH. Integration DATABASE_URL and TEST_DATABASE_URL pointed only at the new final test database.
+
+| Command | Actual result |
+|---|---|
+| `..\.venv\Scripts\ruff.exe check --no-cache .` | PASS |
+| `..\.venv\Scripts\ruff.exe format --check --no-cache .` | PASS, 62 files already formatted |
+| `..\.venv\Scripts\python.exe -m mypy --cache-dir=../.audit-mypy-cache app` | PASS, 49 source files |
+| `..\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider` with isolated PostgreSQL | PASS, 62 passed in 15.26 seconds, no skips; includes pagination and actual HTTP rate-limit checks |
+| Initial pytest without TEST_DATABASE_URL | 28 passed, 27 skipped before the four configuration tests were added; superseded by the full run above |
+| `python -m alembic upgrade head`, `check`, `downgrade base`, `upgrade head` on new browser test DB | PASS; no new upgrade operations detected |
+| `python -m scripts.seed_demo`, `python -m scripts.maintenance` on new browser test DB | PASS |
+| root `.venv\Scripts\python.exe -m pip check` | PASS, no broken requirements |
+| frontend `npm.cmd run typecheck` | PASS on successful rerun |
+| frontend `npm.cmd run lint` | PASS |
+| frontend `npm.cmd test` | PASS, 4 files / 13 tests |
+| frontend `npm.cmd run build` | PASS, Next.js 16.4.0 standalone production build |
+| frontend `npm.cmd run e2e -- --trace off` | PASS, 2 tests against production build and isolated PostgreSQL; includes 390px overflow assertion |
+| root `docker --config .docker-local compose config --quiet` | PASS |
+| backend and proxied `/api/v1/health/ready` | PASS, HTTP 200 |
+| `git diff --check` | PASS, but Git diff cannot validate untracked source |
+
+Initial sandbox attempts encountered cache-write restrictions, a mypy failure and PostgreSQL restricted-token error. Ruff was rerun without cache; typing/build/mypy/database execution succeeded with approved execution access. Initial failures are not counted as passing runs. Vitest emits a nonfatal warning about a future Vite native config loader. Existing installation compatibility is verified; fresh installation reproducibility and dependency vulnerability scans were not rerun.
+
+## Confirmed defects and fixes
+
+1. `app/db/session.py`: rollback errors could replace the original operation error. Rollback now logs a redacted failure and rethrows the original. Added an identity-preservation/redaction regression test. Session context-manager close failure is not separately fault-injected.
+2. `backend/Dockerfile`: default Uvicorn access logs included raw URLs despite the normalized logging policy. Added `--no-access-log`, consistent with native launcher. Docker runtime subsequently passed; see Docker follow-up.
+3. `app/core/config.py`: zero/negative authentication or chat limits passed validation and denied all requests. Both are now subject to positive-limit validation, with four regression cases.
+4. `.gitignore`: ignored the separate audit mypy cache. Existing caches and unrelated user files were retained.
+5. `frontend/src/features/Chat.tsx`: restored pending replay duplicated an assistant already loaded from history. Deduplicate the returned persisted message ID and regression-test the lost-response/reload case.
+6. `app/schemas/chat.py`: whitespace-only API messages passed length validation. Added a nonblank validator and regression test without changing valid message content.
+
+No database schema changes were required.
+
+## API and actual rate limits
+
+All application paths use `/api/v1`; see PROJECT_GUIDE for payloads and response semantics.
+
+| Method and path | Authentication | Rate limit |
+|---|---|---|
+| POST /auth/login | public, exact Origin required | AUTH_RATE_LIMIT, default 10/minute |
+| GET /auth/me | session | none |
+| POST /auth/logout | session + Origin + CSRF | none |
+| GET /orders, GET /orders/{order_id} | session | none |
+| POST /conversations | session + Origin + CSRF | none |
+| GET /conversations/{identity}/messages | session | none |
+| POST /chat/messages | session + Origin + CSRF | CHAT_RATE_LIMIT, default 10/minute |
+| POST /actions/{identity}/confirm, /dismiss | session + Origin + CSRF | none |
+| GET /health/live, /health/ready | public | none |
+
+Login key is SHA-256 of `login:` plus connection-source host; chat key is SHA-256 of `chat:` plus authenticated UUID. Atomic PostgreSQL upsert counters use fixed epoch-minute windows and commit before processing. They work across workers sharing the database; separate-session behavior is tested. Next.js proxy clients share the proxy login bucket; forwarded headers are deliberately ignored. A rejected attempt still increments its bucket. 429 envelopes are retryable and include conservative `Retry-After: 60`, not precise remaining seconds. Limits do not apply to other endpoints. Deduplication and action idempotency are separate database mechanisms; chat replay requests still consume rate budget. Multi-process/load testing and public ingress limiting remain launch work.
+
+## Security, errors and logging
+
+PASS: Argon2 hashes; random session/CSRF tokens stored only as SHA-256; expiry/revocation; HttpOnly session, readable CSRF, SameSite=Lax, Secure in production; exact trusted Origin plus session-bound CSRF on authenticated mutations. Production configuration rejects mock mode and HTTP origin. SQLAlchemy binds query parameters. Ownership is enforced before history/action/order access; related primary-key lookups occur after owned parent validation. No provider/database secrets are sent to the browser by application code. No actual secret file was published.
+
+Central handlers cover Pydantic validation (422), HTTP status/headers, domain errors, SQLAlchemy errors (503) and unexpected failures (500). Stable envelope includes error code/message/retryable and matching X-Request-ID; responses use no-store and nosniff. Tests cover WWW-Authenticate preservation and Retry-After. Provider timeout/unavailable translation is targeted, with one bounded safe retry; no mock fallback on live failure. Cleanup failures retain original chat errors. Backend outages have safe UI states; no real database outage was induced during the audit because the existing cluster is shared.
+
+Logs normalize paths to matched templates and exclude raw query strings, bodies, headers, passwords, cookies, tokens, keys, SQL values, customer/provider text and exception messages. Request, service, agent/tool and provider events share request correlation. Completion includes method, route template, action, numeric status and duration. LOG_FORMAT auto uses console in development and JSON in production; console/json choices supported. Tests cover concurrent correlation, redaction, logger failure and commit/replay/rollback accuracy. Preparation emits after commit; mutation success emits only after commit; rollback emits no success. Audit rows remain transactional authority; operational logs are best effort, not an outbox. No claim of full observability/token-cost metrics or jittered retries: current retry delay is fixed 0.1 seconds.
+
+## Remaining limitations and readiness
+
+Local demo readiness: PASS for the mock-provider workflow on this installation, including production frontend build and real PostgreSQL transactions. Final services use existing ecommerce_local configuration; browser mutations occurred only in the new test DB. Local order availability depends on preserved existing data, not a reset fixture.
+
+Production readiness: PARTIAL, not approved for public launch. Live provider, hosted CI, backup/restore, TLS/ingress, load/security review, rate-limit tuning, retention and maintenance scheduling remain unverified or deployment work. No customer provisioning/password reset, refresh-token rotation, conversation-list UI, payments/refunds/stock/carrier changes, RAG or MCP. History uses stable UUID pagination then client timestamp sorting, rather than chronological server paging. Frontend Feedback offers manual retry even for some nonretryable errors; retry presentation needs targeted follow-up before production. Restored pending replay now removes any existing assistant with the returned persisted message ID. Automated browser checks ran twice, including after the final frontend rebuild. Generated desktop cancellation and 390px mobile order screenshots were visually inspected: confirmation results, navigation/logout and local-only cancellation wording are visible. No full keyboard or contrast audit was performed.
+
+
+## Docker follow-up - 12 October 2026
+
+This follow-up supersedes the earlier Docker-runtime BLOCKED result and fresh-container-install uncertainty. Docker Engine 29.5.3 and Compose v5.1.4 were available on Linux x86_64. The complete isolated stack was built and verified, then left running.
+
+### Isolation and confirmed fix
+
+Project: parcel-docker-verify. Volume: parcel-docker-verify_postgres-data, mounted at /var/lib/postgresql. Database: ecommerce, internal 5432 only (inspect reports no host binding). Frontend: http://127.0.0.1:3001. Backend: loopback 8002 -> container 8000. Provider: explicitly mock/demo, APP_ENV=development, JSON logs. No live provider call occurred.
+
+Confirmed defect fixed in compose.yaml: the frontend had a build-time BACKEND_URL but no runtime value for server-side session verification. Added frontend environment BACKEND_URL=http://backend:8000; both rewrites and server authentication now use the container backend. Added compose.verify.yaml to replace the frontend port, publish the diagnostic backend only on loopback, set exact FRONTEND_ORIGIN=http://127.0.0.1:3001, force mock mode with empty provider credentials and use parcel_docker_session. The different hostname isolates Docker CSRF cookies from native localhost:3000. Native environment files and application ports remain unchanged. Compose !override requires v2.24.4+.
+
+Browser auth tests now accept E2E_BASE_URL and E2E_SESSION_COOKIE, retaining native defaults. No application authentication rule was weakened. Both application containers run as UID 1000. Backend image contains no actual .env file; Docker ignore rules exclude actual frontend/backend environment files.
+
+### Executed commands and results
+
+From project root, the following commands actually executed successfully:
+
+```cmd
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml config --quiet
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml up --build -d
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml --profile tools run --rm seed
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml ps -a
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml exec -T backend python -m alembic check
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml exec -T backend python -m pip check
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml restart -t 30 db backend frontend
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml up -d --wait --wait-timeout 120
+```
+
+Clean Docker builds installed backend/requirements.lock and ran frontend npm ci (261 packages; installer reported zero vulnerabilities), then completed Next.js production build. No dependency lockfile was changed. DB health precedes the migration job; migrate exited 0, backend became healthy, then frontend started and became healthy. Alembic check found no new upgrade operations; pip check found no broken requirements. The intended seed service seeded only this new Docker database and was not run against native databases.
+
+Browser verification from frontend:
+
+```cmd
+set "E2E_BASE_URL=http://127.0.0.1:3001"
+set "E2E_SESSION_COOKIE=parcel_docker_session"
+npm.cmd run e2e -- --trace off --output auth-test-results/docker
+npm.cmd run e2e -- e2e/auth.spec.ts --trace off --output auth-test-results/docker-after-restart
+```
+
+PASS: 2 browser workflows (18.2 seconds), followed by 1 auth workflow after restart (4.4 seconds). Tests covered anonymous protection, invalid credentials/origin, valid login, cookie flags, refresh, authenticated-login redirect, missing CSRF rejection, chat navigation, logout/removal, invalid session, owned orders, shipped status, cancellation preparation, dismissal, preparation again, confirmation and refreshed CANCELLED state. Mobile overflow assertion also passed. The test title mentions expiry, but actual expired-session timestamps are covered by previous backend tests; this Docker browser test checks invalid/revoked sessions rather than forcing timestamp expiry.
+
+Additional temporary verifier command: root `.venv\Scripts\python.exe .local-logs/verify-docker-api.py` (executed before and after restart). PASS: explicit mock mode, proxied login/logout, Alex/Sam order ownership and separate lists, history/action cross-owner 404, blank chat 422, missing-ID clarification, shipped cancellation rejection, missing-CSRF 403, saved-result confirmation replay, safe error envelope and matching request IDs. The verifier reads only Docker-origin resources and a conversation ID obtained with Docker db psql. Temporary evidence/script files remain ignored in .local-logs; they are not required application source.
+
+Docker DB query after browser cancellation and repeated confirmations returned CANCELLED | version 2 | cancellation audit count 1 | completed action count 1. Repeated confirmation returned identical saved business results (excluding the per-request request ID), without another mutation/audit. No refunds or external shipment changes were tested or claimed. ORD1004 remains CANCELLED in Docker; the seed does not reset it.
+
+PASS: direct http://127.0.0.1:8002/api/v1/health/ready and proxied http://127.0.0.1:3001/api/v1/health/ready return 200. Final db/backend/frontend are healthy; migrate exited 0 as intended.
+
+### Persistence, logs and native preservation
+
+Normal restart used the command above, with no volume deletion. Before/after Docker order checksum and counts for messages, audits and actions matched. API smoke checks and browser auth passed afterward. The named volume is retained and services are running.
+
+Native PostgreSQL PID 11628 remained on 55432. Native frontend listeners PIDs 18580/20856 remained on 3000. Native backend 8001 had no listener at the initial check and still had none at the final check; no attempt was made to stop or repair it as part of Docker work. Existing ecommerce_local order count/checksum matched before/after. No native tables were seeded, reset or mutated. No existing containers/volumes were removed.
+
+Captured logs: .local-logs/docker-app-before-restart.log and docker-app-final.log. Before-restart JSON analysis found 2 cancellation_prepared, 1 cancellation_dismissed, 1 cancellation_committed and 2 cancellation_replayed events, plus provider/request completions. Numeric status/duration and request/method/route/action fields passed checks. Sensitive payload field names were absent. Demo application password, demo DB credential string and database URL prefix were absent from captured application logs. This is observed evidence, not an exhaustive proof for every possible input. Docker stdout/stderr are also accessible using compose logs; no raw Uvicorn URL access log is enabled.
+
+### Demo and exact data-preserving operation
+
+Application credentials only: alex@example.test / DemoShop!2026; sam@example.test / DemoShop!2026. These are public fictional demo logins, not database credentials. Use http://127.0.0.1:3001 exactly; localhost:3001 is a different Origin and can collide with native localhost cookies.
+
+From project root in CMD:
+
+```cmd
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml logs -f --tail 100 backend frontend
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml stop
+docker --config .docker-local compose --env-file .env.example -p parcel-docker-verify -f compose.yaml -f compose.verify.yaml up -d --wait --wait-timeout 120
+```
+
+Ctrl+C stops log following only. stop and up preserve the volume. Rebuild with the earlier up --build -d command after code changes. Do not use down -v, delete volumes or reset the native database. Use the same project/files/env arguments on every command.
+
+### Remaining checks
+
+Docker local mock-demo readiness: PASS. Docker/runtime and clean container dependency installs are now verified. Live OpenAI, production HTTPS/Secure-cookie behavior, external ingress, Docker Desktop/host reboot persistence, image vulnerability scanning beyond npm install's audit, backup/restore, load/multi-replica tests and hosted GitHub CI remain NOT VERIFIED. No new full backend unit suite was run inside Docker; previous backend results remain separate evidence. Production readiness is still PARTIAL. Native backend availability was not changed by this task.

@@ -1,0 +1,33 @@
+# Requirements
+
+## Application use
+An authenticated shopper checks order status through chat or an order page and cancels an eligible order after confirmation. A support system gains controlled database actions and traceable decisions.
+
+## MVP features
+- Login/logout with server-managed sessions.
+- Customer order list and order details.
+- Chat with get_order_status and cancel_order tools.
+- Structured cancellation confirmation card.
+- Persist conversations, messages, cancellation actions and audit events.
+- Loading, empty, validation, network and service error states.
+- Health checks and structured request/error logs.
+
+## Scope boundaries
+No payments, refunds, shipment-provider integration, returns, inventory reservation, administrator UI, RAG or MCP in the first version. Cancellation updates local order state only; do not describe it as a refund. Real integrations require an extended transaction/workflow design.
+
+## Functional requirements
+FR-01: Derive customer identity from the authenticated session, never a model-supplied user ID.
+FR-02: Look up an order using order_id plus customer_id.
+FR-03: Ask for order ID when absent; do not guess from another customer's data.
+FR-04: Show status/product from database facts.
+FR-05: Prepare cancellation action without mutating the order.
+FR-06: Confirm a server-issued pending action and recheck eligibility transactionally.
+FR-07: Repeated confirmation returns the stored result without a second mutation.
+FR-08: Unsupported requests receive a scope explanation.
+FR-09: History and confirmation actions are accessible only to their owner.
+
+## Quality targets
+Proposed initial limits: message 2,000 characters; at most 4 model calls and 4 tool executions per turn; 30-second overall chat deadline; 10 chat submissions per authenticated user per minute. Make these configurable and tune after load testing. These are planning targets, not measured performance claims.
+
+## Acceptance criteria
+A customer sees only their orders. A shipped order cannot be cancelled. A successful cancellation commits status, action result and audit record together. A provider failure displays a retryable error without claiming success. A database-committed cancellation remains successful even if subsequent response generation fails.

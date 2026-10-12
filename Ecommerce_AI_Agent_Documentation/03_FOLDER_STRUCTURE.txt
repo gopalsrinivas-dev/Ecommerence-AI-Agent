@@ -1,0 +1,102 @@
+Proposed Folder Structure
+
+This tree describes files to create during implementation; it is not a runnable repository in this delivery.
+
+ecommerce-ai-agent/
+  README.md
+  .gitignore
+  .env.example
+  compose.yaml
+  docs/                         # This documentation set
+  backend/
+    pyproject.toml
+    dependency-lock-file        # Choose one package manager and lock format
+    Dockerfile
+    alembic.ini
+    migrations/versions/
+    app/
+      main.py                    # App factory, routers, lifespan
+      api/
+        dependencies.py          # Current user, DB session, request context
+        router.py
+        routes/auth.py
+        routes/orders.py
+        routes/chat.py
+        routes/actions.py
+        routes/health.py
+      core/
+        config.py
+        security.py
+        logging.py
+        exceptions.py
+        middleware.py
+      db/
+        base.py
+        session.py
+      models/
+        user.py
+        session.py
+        order.py
+        conversation.py
+        message.py
+        action.py
+        audit_event.py
+      schemas/
+        auth.py
+        order.py
+        chat.py
+        action.py
+        error.py
+      repositories/
+        users.py
+        orders.py
+        conversations.py
+        actions.py
+      services/
+        auth_service.py
+        order_service.py
+        chat_service.py
+        action_service.py
+      agents/
+        orchestrator.py
+        prompts.py
+        registry.py
+        tools/order_tools.py
+      integrations/llm_client.py
+    scripts/seed_demo.py
+    tests/unit/
+    tests/integration/
+    tests/agent/
+  frontend/
+    package.json
+    package-lock.json
+    Dockerfile
+    next.config.ts
+    tsconfig.json
+    src/
+      app/layout.tsx
+      app/error.tsx
+      app/not-found.tsx
+      app/login/page.tsx
+      app/orders/page.tsx
+      app/orders/[orderId]/page.tsx
+      app/chat/page.tsx
+      components/ui/
+      features/auth/
+      features/orders/
+      features/chat/
+        ChatWindow.tsx
+        MessageList.tsx
+        MessageComposer.tsx
+        CancellationCard.tsx
+        useChat.ts
+      lib/api-client.ts
+      lib/errors.ts
+      types/api.ts
+    tests/
+    e2e/
+  infra/reverse-proxy.conf
+  .github/workflows/ci.yml
+
+Layer rules
+Routes call services. Agent tools also call services; they do not duplicate order rules. Services orchestrate repositories within a transaction owned by the service. Repositories do not commit independently. Schemas define public input/output; ORM models represent persisted records. Features own their UI logic; shared components contain reusable presentation.
