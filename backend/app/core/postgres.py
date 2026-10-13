@@ -1,6 +1,7 @@
 """Opt-in Windows libpq discovery using the administrator-installed PostgreSQL client."""
 
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +9,9 @@ _dll_directories: list[Any] = []
 
 
 def configure_libpq(postgres_bin: str) -> None:
-    if os.name != "nt" or not postgres_bin:
+    if sys.platform != "win32":
+        return
+    if not postgres_bin:
         return
     directory = Path(postgres_bin)
     if not directory.is_absolute() or not (directory / "libpq.dll").is_file():
